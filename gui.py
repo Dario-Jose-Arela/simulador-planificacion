@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 
 from file_reader import leer_procesos
-from scheduler import fcfs, spn
+from scheduler import fcfs, spn, srt, rr
 from metrics import calcular_metricas
 
 class SimuladorGUI:
@@ -18,6 +18,8 @@ class SimuladorGUI:
         self.tiempo_actual = 0
         self.bloque_width = 40
         self.colores = {}
+        self.tiempo_total = 0
+        self.tiempo_cpu = 0
 
     def crear_widgets(self):
         frame_top = tk.Frame(self.root)
@@ -28,7 +30,7 @@ class SimuladorGUI:
 
         self.algoritmo = tk.StringVar()
         self.combo = ttk.Combobox(frame_top, textvariable=self.algoritmo)
-        self.combo['values'] = ("FCFS", "SPN")
+        self.combo['values'] = ("FCFS", "SPN", "SRT", "RR")
         self.combo.current(0)
         self.combo.grid(row=0, column=1, padx=10)
 
@@ -40,6 +42,12 @@ class SimuladorGUI:
 
         self.canvas = tk.Canvas(self.root, height=150, bg="white")
         self.canvas.pack(fill="x", pady=10)
+        # Indicadores en tiempo real
+        self.label_cpu = tk.Label(self.root, text="Uso CPU: 0%")
+        self.label_cpu.pack()
+
+        self.label_procesos = tk.Label(self.root, text="Procesos activos: 0")
+        self.label_procesos.pack()
 
     def cargar_archivo(self):
         ruta = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -52,6 +60,8 @@ class SimuladorGUI:
         if not self.procesos:
             self.texto.insert(tk.END, "Primero carga un archivo\n")
             return
+        for p in self.procesos:
+            p.restante = p.duracion
 
         self.canvas.delete("all")
         self.tiempo_actual = 0
@@ -60,10 +70,17 @@ class SimuladorGUI:
 
         if algoritmo == "FCFS":
             resultado = fcfs(self.procesos.copy())
-        else:
-            resultado = spn(self.procesos.copy())
+            self.timeline = self.generar_timeline(resultado)
 
-        self.timeline = self.generar_timeline(resultado)
+        elif algoritmo == "SPN":
+            resultado = spn(self.procesos.copy())
+            self.timeline = self.generar_timeline(resultado)
+
+        elif algoritmo == "SRT":
+            resultado, self.timeline = srt(self.procesos.copy())
+
+        elif algoritmo == "RR":
+            resultado, self.timeline = rr(self.procesos.copy(), quantum=2)
 
         # Obtener métricas
         resultados, prom_esp, prom_ret = calcular_metricas(resultado)
@@ -85,6 +102,8 @@ class SimuladorGUI:
         self.texto.insert(tk.END, f"Promedio retorno: {prom_ret:.2f}\n\n")
 
         self.simular()
+        self.tiempo_total = len(self.timeline)
+        self.tiempo_cpu = 0
 
     def generar_timeline(self, procesos):
         timeline = []
@@ -100,6 +119,17 @@ class SimuladorGUI:
             return
 
         proceso = self.timeline[self.tiempo_actual]
+        # Contar CPU ocupado
+        if proceso != "idle":
+            self.tiempo_cpu += 1
+
+# Calcular porcentaje CPU
+        uso_cpu = (self.tiempo_cpu / (self.tiempo_actual + 1)) * 100
+        self.label_cpu.config(text=f"Uso CPU: {uso_cpu:.2f}%")
+
+# Procesos activos
+        activos = self.procesos_activos(self.tiempo_actual)
+        self.label_procesos.config(text=f"Procesos activos: {activos}")
 
         x1 = self.tiempo_actual * self.bloque_width
         x2 = x1 + self.bloque_width
@@ -118,3 +148,5 @@ class SimuladorGUI:
             colores_base = ["red", "green", "blue", "orange", "purple", "cyan"]
             self.colores[proceso] = colores_base[len(self.colores) % len(colores_base)]
         return self.colores[proceso]
+    def procesos_activos(self, tiempo):
+        return len([p for p in self.procesos if p.llegada <= tiempo and p.fin > tiempo])

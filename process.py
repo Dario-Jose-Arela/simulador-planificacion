@@ -3,6 +3,7 @@ class Proceso:
         self.nombre = nombre
         self.llegada = int(llegada)
         self.duracion = int(duracion)
+        self.restante = self.duracion
 
         # Se calcularán después
         self.inicio = 0
